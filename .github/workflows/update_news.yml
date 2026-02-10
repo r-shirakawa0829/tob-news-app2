@@ -1,0 +1,23 @@
+name: Daily News Update
+on:
+  schedule:
+    - cron: '0 0,9 * * *'
+  workflow_dispatch:
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - run: pip install feedparser pandas streamlit
+      - run: python -c "from app import fetch_all_sources; fetch_all_sources()"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add news_database.csv
+          git commit -m "update" || exit 0
+          git push
