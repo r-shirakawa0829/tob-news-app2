@@ -138,7 +138,7 @@ st.set_page_config(page_title="Business Tank Radar", layout="wide")
 st.markdown("""
     <style>
     .stCard { background: white; border-left: 5px solid #ddd; padding: 15px; border-radius: 4px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .score-crown { border-left-color: #ff00ff !important; background-color: #fff0ff; }
+    .score-crown { border-left-color: #ff00ff !important; background-color: #fff5f5; }
     .score-s { border-left-color: #ff4b4b !important; background-color: #fff5f5; }
     .score-a { border-left-color: #ffa500 !important; }
     .tag { display: inline-block; background: #e9ecef; color: #444; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; margin-bottom: 4px; }
@@ -210,4 +210,13 @@ if os.path.exists(db_file):
                     <small style="color:#666;">{row['time']} | {row['company']}</small>
                     <small>{rank_label}</small>
                 </div>
-                <a href="{row['url']}" target="_blank" style="text-decoration:none;
+                <a href="{row['url']}" target="_blank" style="text-decoration:none; color:#1f77b4; font-weight:bold; font-size:16px; display:block; margin-bottom:8px;">
+                    {row['title']}
+                </a>
+                <div>{tag_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("条件に合致する企業は見つかりませんでした。")
+else:
+    st.warning("データがありません。サイドバーからスキャンを実行してください。")
