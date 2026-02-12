@@ -24,18 +24,19 @@ def analyze_business_tank_fit(title, summary):
     tags = []
     score = 0
 
-    # 1. 基本ターゲット
+    # 1. 【User指定】成長・変化の意思（基本ターゲット）
+    # 「上場」は大手すぎる可能性があるため削除。「IPO」は残す。
     growth_keywords = [
         "販路拡大", "資金調達", "採用強化", "吸収合併", "新規事業", 
         "新サービス", "社内体制の一新", "プレリリース", "事業拡大",
-        "上場", "IPO", "黒字化"
+        "IPO", "黒字化"
     ]
     for k in growth_keywords:
         if k in text:
             tags.append(f"📈{k}")
             score += 1
 
-    # 2. パートナー不足・販路課題
+    # 2. 【Analysis】パートナー不足・販路課題（ビジネスタンクが最も刺さる）
     partner_keywords = [
         "提携", "共同研究", "共同開発", "実証実験", "協業", 
         "アライアンス", "オープンイノベーション", "OEM", "代理店募集",
@@ -46,7 +47,7 @@ def analyze_business_tank_fit(title, summary):
             tags.append(f"🤝{k}")
             score += 2 
 
-    # 3. トップの決断・変革期
+    # 3. 【Analysis】トップの決断・変革期
     change_keywords = [
         "社長就任", "代表変更", "新体制", "経営計画", "刷新",
         "DX推進", "生産性向上", "コスト削減"
@@ -55,6 +56,17 @@ def analyze_business_tank_fit(title, summary):
         if k in text:
             tags.append(f"⚡{k}")
             score += 1
+
+    # 4. 【NEW】大手・有名企業の減点（ペナルティ）
+    # 大手はトップアプローチが難しいため、優先度を下げる
+    big_company_keywords = [
+        "大手", "最大手", "業界トップ", "東証プライム", "老舗", 
+        "有名", "ホールディングス", "グループ"
+    ]
+    for k in big_company_keywords:
+        if k in text:
+            score -= 10 # 大きく減点してリストの下に送る
+            tags.append(f"🏢{k}(大手)")
 
     return score, list(set(tags))
 
@@ -76,13 +88,14 @@ def fetch_all_sources():
         for entry in feed.entries:
             if is_target_company(entry.title, entry.summary):
                 score, tags = analyze_business_tank_fit(entry.title, entry.summary)
-                if score > 0:
-                    title_clean = entry.title.replace("【", " ").replace("】", " ").replace("「", " ").replace("」", " ")
-                    company = title_clean.split("が")[0].split("の")[0].split("、")[0].strip()[:20]
-                    new_entries.append([today_str, now.strftime("%H:%M"), company, entry.title, entry.link, score, ",".join(tags)])
+                # スコアがマイナス（大手）でも一応リストには残すが、表示順は下になる
+                # まったく表示したくない場合はここで `if score > 0:` に戻してください
+                title_clean = entry.title.replace("【", " ").replace("】", " ").replace("「", " ").replace("」", " ")
+                company = title_clean.split("が")[0].split("の")[0].split("、")[0].strip()[:20]
+                new_entries.append([today_str, now.strftime("%H:%M"), company, entry.title, entry.link, score, ",".join(tags)])
     
-    # ★ファイル名を変更してリセット★
-    db_file = "news_database_v2.csv"
+    # ★ファイル名をv3に変更してリセット★
+    db_file = "news_database_v3.csv"
     
     if new_entries:
         df_new = pd.DataFrame(new_entries, columns=["date", "time", "company", "title", "url", "score", "tags"])
@@ -98,6 +111,7 @@ def fetch_all_sources():
         else:
             df_final = df_new
         
+        # スコアが高い順（＝アツい企業順）に並び替え。大手はスコアが低いので下に行く。
         df_final = df_final.sort_values(by=["date", "score", "time"], ascending=[False, False, False])
         df_final.to_csv(db_file, index=False, encoding="utf_8_sig")
     return len(new_entries)
@@ -111,6 +125,7 @@ st.markdown("""
     .score-a { border-left-color: #ffa500 !important; }
     .tag { display: inline-block; background: #e9ecef; color: #444; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; margin-bottom: 4px; }
     .hot-tag { background: #ffe8e8; color: #d00; font-weight: bold; border: 1px solid #ffb3b3; }
+    .big-tag { background: #ddd; color: #888; text-decoration: line-through; } /* 大手タグは目立たなくする */
     </style>
     """, unsafe_allow_html=True)
 
@@ -121,13 +136,12 @@ with st.sidebar:
     selected_date = st.date_input("日付選択", datetime.date.today())
     st.divider()
     if st.button("🔄 最新見込み客をスキャン"):
-        with st.spinner("AIがビジネスタンクに最適な企業を分析中..."):
+        with st.spinner("大手を除外し、有望企業を分析中..."):
             count = fetch_all_sources()
             st.success(f"{count}件の企業を抽出しました")
             st.rerun()
 
-# ★読み込むファイル名も変更★
-db_file = "news_database_v2.csv"
+db_file = "news_database_v3.csv"
 target_str = selected_date.strftime("%Y-%m-%d")
 
 if os.path.exists(db_file):
@@ -143,18 +157,28 @@ if os.path.exists(db_file):
             score = row.get('score', 0)
             card_class = "stCard"
             rank_label = ""
+            
+            # スコア基準
             if score >= 3:
                 card_class += " score-s"
                 rank_label = "🔥 <span style='color:#d00;font-weight:bold'>Sランク（最優先）</span>"
             elif score >= 2:
                 card_class += " score-a"
                 rank_label = "✨ <span style='color:#e69500;font-weight:bold'>Aランク（狙い目）</span>"
+            elif score < 0:
+                rank_label = "<span style='color:#999;font-size:10px;'>※大手・対象外の可能性</span>"
             
             tags_list = str(row['tags']).split(",")
             tag_html = ""
             for t in tags_list:
                 if t and t != "nan":
-                    style = "hot-tag" if any(w in t for w in ["販路", "資金", "採用", "新規", "提携"]) else "tag"
+                    # 大手タグはグレーアウト
+                    if "大手" in t or "プライム" in t:
+                        style = "big-tag"
+                    elif any(w in t for w in ["販路", "資金", "採用", "新規", "提携"]):
+                        style = "hot-tag"
+                    else:
+                        style = "tag"
                     tag_html += f'<span class="tag {style}">{t}</span>'
 
             st.markdown(f"""
