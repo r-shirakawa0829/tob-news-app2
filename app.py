@@ -4,6 +4,7 @@ import pandas as pd
 import datetime
 import os
 import urllib.parse
+import calendar # 日付計算用に追加
 
 # --- 判定ロジック：公共・海外を除外 ---
 def is_target_company(title, summary):
@@ -99,7 +100,6 @@ def fetch_all_sources():
     ]
     
     now = datetime.datetime.now()
-    today_str = now.strftime("%Y-%m-%d")
     new_entries = []
     
     for url in feeds:
@@ -108,12 +108,27 @@ def fetch_all_sources():
             if is_target_company(entry.title, entry.summary):
                 score, tags = analyze_business_tank_fit(entry.title, entry.summary)
                 
+                # ★修正：記事の「本当の公開日時」を取得する★
+                article_date_str = now.strftime("%Y-%m-%d") # デフォルトは今日
+                article_time_str = now.strftime("%H:%M")
+                
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    try:
+                        # ニュースの元データから正確な日時を抽出して日本時間に変換
+                        timestamp = calendar.timegm(entry.published_parsed)
+                        pub_dt = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
+                        pub_dt_jst = pub_dt.astimezone(datetime.timezone(datetime.timedelta(hours=9)))
+                        article_date_str = pub_dt_jst.strftime("%Y-%m-%d")
+                        article_time_str = pub_dt_jst.strftime("%H:%M")
+                    except:
+                        pass # 取得失敗時はデフォルトを利用
+
                 title_clean = entry.title.replace("【", " ").replace("】", " ").replace("「", " ").replace("」", " ")
                 company = title_clean.split("が")[0].split("の")[0].split("、")[0].strip()[:20]
-                new_entries.append([today_str, now.strftime("%H:%M"), company, entry.title, entry.link, score, ",".join(tags)])
+                new_entries.append([article_date_str, article_time_str, company, entry.title, entry.link, score, ",".join(tags)])
     
-    # ★ファイル名をv2に変更してリセット★
-    db_file = "news_database_v2.csv"
+    # ★ファイル名をv3に変更して古いデータをリセット★
+    db_file = "news_database_v3.csv"
     
     if new_entries:
         df_new = pd.DataFrame(new_entries, columns=["date", "time", "company", "title", "url", "score", "tags"])
@@ -129,6 +144,7 @@ def fetch_all_sources():
         else:
             df_final = df_new
         
+        # 保存：日付順 > スコア順 > 時間順
         df_final = df_final.sort_values(by=["date", "score", "time"], ascending=[False, False, False])
         df_final.to_csv(db_file, index=False, encoding="utf_8_sig")
     return len(new_entries)
@@ -138,7 +154,7 @@ st.set_page_config(page_title="Business Tank Radar", layout="wide")
 st.markdown("""
     <style>
     .stCard { background: white; border-left: 5px solid #ddd; padding: 15px; border-radius: 4px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .score-crown { border-left-color: #ff00ff !important; background-color: #fff5f5; }
+    .score-crown { border-left-color: #ff00ff !important; background-color: #fff0ff; }
     .score-s { border-left-color: #ff4b4b !important; background-color: #fff5f5; }
     .score-a { border-left-color: #ffa500 !important; }
     .tag { display: inline-block; background: #e9ecef; color: #444; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; margin-bottom: 4px; }
@@ -157,11 +173,11 @@ with st.sidebar:
     if st.button("🔄 最新見込み客をスキャン"):
         with st.spinner("国内スタートアップ・成長企業を分析中..."):
             count = fetch_all_sources()
-            st.success(f"{count}件の企業を抽出しました")
+            st.success(f"スキャン完了しました")
             st.rerun()
 
-# ★読み込むファイル名も変更★
-db_file = "news_database_v2.csv"
+# 読み込むファイル名もv3に
+db_file = "news_database_v3.csv"
 target_str = selected_date.strftime("%Y-%m-%d")
 
 if os.path.exists(db_file):
@@ -169,6 +185,7 @@ if os.path.exists(db_file):
     if "score" in df.columns:
         df = df.sort_values(by=["score", "time"], ascending=[False, False])
         
+    # ★カレンダーで指定した日付と完全に一致するものだけを抽出★
     display_df = df[df["date"] == target_str]
     st.subheader(f"📅 {target_str} のアプローチ推奨リスト")
     
@@ -217,6 +234,6 @@ if os.path.exists(db_file):
             </div>
             """, unsafe_allow_html=True)
     else:
-        st.info("条件に合致する企業は見つかりませんでした。")
+        st.info(f"{target_str} に該当する記事は見つかりませんでした。")
 else:
     st.warning("データがありません。サイドバーからスキャンを実行してください。")
